@@ -62,9 +62,9 @@ fn read_adc(mcp3208: ResMut<Mcp3208Resource>) {
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
 }
-pub struct adcPlugin;
+pub struct AdcPlugin;
 
-impl Plugin for adcPlugin{
+impl Plugin for AdcPlugin{
     fn build(&self, app: &mut App){
         app.insert_resource(Mcp3208Resource::new())
             .add_systems(Update, read_adc);
@@ -151,7 +151,7 @@ fn print_timer(time: Res<Time>, mut timer: ResMut<ColorTimer>) {
 }
 fn main() {
     App::new()
-        .add_plugins((MinimalPlugins, adcPlugin))
+        .add_plugins((MinimalPlugins, AdcPlugin))
         //.add_systems(Startup, setup_lights)
         //.add_systems(Update, clear_leds)
         .run();
