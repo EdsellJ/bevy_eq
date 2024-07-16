@@ -5,10 +5,20 @@ use mcp3208::{Channel, Mcp3208};
 use std::sync::{Arc, Mutex};
 use rand::Rng;
 
+
+#[derive(Resource, Default)]
+enum GameMode {
+    Warmup,
+    #[default]
+    SingleSense,
+    MultiSense,
+}
+
 #[derive(Resource)]
 struct Mcp3208Resource {
     devices: Vec<(String, Arc<Mutex<Mcp3208>>)>,
     channels: [Channel; 8],
+    active_id: Option<Vec<u8>>,
 }
 
 impl Mcp3208Resource {
@@ -25,20 +35,22 @@ impl Mcp3208Resource {
             Channel::Ch0, Channel::Ch1, Channel::Ch2, Channel::Ch3,
             Channel::Ch4, Channel::Ch5, Channel::Ch6, Channel::Ch7,
         ];
-        Mcp3208Resource { devices, channels }
+        Mcp3208Resource { devices, channels, active_id: None }
     }
     fn read_channel(&self, device_index: usize, chnl: Channel) -> u16 {
         let device = &self.devices[device_index].1;
         let mut mcp3208 = device.lock().unwrap();
         mcp3208.read_adc_diff(chnl).unwrap()
     }
+
 }
  
 //create a component for channel
 #[derive(Component)]
 struct Sensor{
-    channel: u8,
-    device: u8,
+    channel: Channel,
+    device: String,
+    value: u16,
 }
 
 fn read_all_test(mcp3208: ResMut<Mcp3208Resource>) {
@@ -64,11 +76,78 @@ fn read_all_test(mcp3208: ResMut<Mcp3208Resource>) {
     }
 }
 
+fn spawn_sensor(mut commands: Commands, mcp3208: Res<Mcp3208Resource>){
+    let id = 0;
+    match id {
+        0..=8 => {
+            commands.spawn(Sensor{
+                channel: mcp3208.channels[id as usize],
+                device: mcp3208.devices[0].0.clone(),
+                value: 0,
+            });
+        }
+        9..=16 => {
+            commands.spawn(Sensor{
+                channel: mcp3208.channels[(id-8) as usize],
+                device: mcp3208.devices[1].0.clone(),
+                value: 0,
+            });
+        }
+        17..=24 => {
+            commands.spawn(Sensor{
+                channel: mcp3208.channels[(id-16) as usize],
+                device: mcp3208.devices[2].0.clone(),
+                value: 0,
+            });
+        }
+        25..=32 => {
+            commands.spawn(Sensor{
+                channel: mcp3208.channels[(id-24) as usize],
+                device: mcp3208.devices[3].0.clone(),
+                value: 0,
+            });
+        }
+        33 => {
+            commands.spawn(Sensor{
+                channel: mcp3208.channels[7],
+                device: mcp3208.devices[4].0.clone(),
+                value: 0,
+            });
+        }
+        _ => {}
+    }
+}
+
+fn read_sensor(mut sensor: Query<(&mut Sensor, Entity)>, mcp3208: Res<Mcp3208Resource>){
+    for (mut sensor, entity) in sensor.iter_mut(){
+        let value = mcp3208.read_channel(0, sensor.channel);
+        sensor.value = value;
+    }
+}
+#[derive(Resource)]
+struct PrintTimer(Timer);
+
+fn display_sensor(time: Res<Time>, mut timer: ResMut<PrintTimer>, sensor: Query<(&Sensor, Entity)>){
+    if timer.0.tick(time.delta()).just_finished(){
+        for (sensor, _) in sensor.iter(){
+            println!("Device: {}, Channel: {:?}, ADC Value: {}", sensor.device, sensor.channel, sensor.value);
+        }
+    }
+}
+
 fn warmup(mut mcp3208: ResMut<Mcp3208Resource>){
     //TODO: activate random light and sensor combo
     // get random number between 0 and 33 inclusive
-    let mut rng = rand::thread_rng();
-    let random_number = rng.gen_range(0..=33);
+    //let mut rng = rand::thread_rng();
+    //let random_number = rng.gen_range(0..=33);
+    let random_number = 0;
+    // poll sensor
+    //spawn_sensor(random_number, commands, mcp3208);
+    //read_sensor(sensor, mcp3208);
+    //print sensor value
+    //for (sensor, _) in sensor.iter_mut(){
+        //println!("Device: {}, Channel: {:?}, ADC Value: {}", sensor.device, sensor.channel, sensor.value);
+    //}
 
 }
 pub struct AdcPlugin;
@@ -76,8 +155,14 @@ pub struct AdcPlugin;
 impl Plugin for AdcPlugin{
     fn build(&self, app: &mut App){
         app.insert_resource(Mcp3208Resource::new())
-            .add_systems(Update, read_all_test);
+            .insert_resource(GameMode::SingleSense)
+            .insert_resource(PrintTimer(Timer::from_seconds(0.5, TimerMode::Repeating)))
+            .add_systems(Startup, spawn_sensor)
+            .add_systems(Update, read_sensor)
+            .add_systems(Update, display_sensor);
+            //.add_systems(Update, read_all_test);
     }
+
 }
 #[derive(Resource)]
 struct ColorTimer(Timer);
