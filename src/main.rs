@@ -2,40 +2,65 @@ use bevy::prelude::*;
 use bevy::time::Fixed;
 use rs_ws281x::{ChannelBuilder, Controller, ControllerBuilder, StripType};
 use mcp3208::{Channel, Mcp3208};
+use std::sync::{Arc, Mutex};
 
 #[derive(Resource)]
-struct Mcp3208Resource{
-    mcp3208: Mcp3208,
-    //array of Channel enum
-    channel: [Channel; 8]
+struct Mcp3208Resource {
+    devices: Vec<(String, Arc<Mutex<Mcp3208>>)>,
+    channels: [Channel; 8],
 }
 
-impl Mcp3208Resource{
-    fn new() -> Self{
-        let mcp3208 = Mcp3208::new("/dev/spidev0.0").unwrap();
-        let channel: [Channel; 8] = [Channel::Ch0, Channel::Ch1, Channel::Ch2, Channel::Ch3, Channel::Ch4, Channel::Ch5, Channel::Ch6, Channel::Ch7];
-        Mcp3208Resource{mcp3208, channel}
+impl Mcp3208Resource {
+    fn new() -> Self {
+        // Initialize each MCP3208 device
+        let devices = vec![
+            ("/dev/spidev1.0".to_string(), Arc::new(Mutex::new(Mcp3208::new("/dev/spidev1.0").unwrap()))),
+            ("/dev/spidev1.1".to_string(), Arc::new(Mutex::new(Mcp3208::new("/dev/spidev1.1").unwrap()))),
+            ("/dev/spidev1.2".to_string(), Arc::new(Mutex::new(Mcp3208::new("/dev/spidev1.2").unwrap()))),
+            ("/dev/spidev0.0".to_string(), Arc::new(Mutex::new(Mcp3208::new("/dev/spidev0.0").unwrap()))),
+            ("/dev/spidev0.1".to_string(), Arc::new(Mutex::new(Mcp3208::new("/dev/spidev0.1").unwrap()))),
+        ];
+        let channels: [Channel; 8] = [
+            Channel::Ch0, Channel::Ch1, Channel::Ch2, Channel::Ch3,
+            Channel::Ch4, Channel::Ch5, Channel::Ch6, Channel::Ch7,
+        ];
+        Mcp3208Resource { devices, channels }
     }
-    fn read_channel(&mut self, chnl: Channel) -> u16{
-        self.mcp3208.read_adc_diff(chnl).unwrap()
+    fn read_channel(&self, device_index: usize, chnl: Channel) -> u16 {
+        let device = &self.devices[device_index].1;
+        let mut mcp3208 = device.lock().unwrap();
+        mcp3208.read_adc_diff(chnl).unwrap()
     }
 }
  
 //create a component for channel
 #[derive(Component)]
 struct Sensor{
-    channel: u8
+    channel: u8,
+    device: u8,
 }
 
-fn read_adc(mut mcp3208: ResMut<Mcp3208Resource>){
-    let channel = mcp3208.channel;
-    //read adc value from channel 0
-    let value = mcp3208.read_channel(channel[0]);
-    //erase last console printed line then print adc value
-    print!("\x1B[1A\x1B[K");
-    println!("ADC Value: {}", value);
-    //sleep for 1 ms
-    std::thread::sleep(std::time::Duration::from_millis(5));
+fn read_adc(mcp3208: ResMut<Mcp3208Resource>) {
+    //clear previous 40 lines
+    println!("\x1B[2J\x1B[1;1H");
+    let mut i = 0;
+    for device_index in 0..mcp3208.devices.len() {
+        for channel in &mcp3208.channels {
+            //if on channel 0
+            let value = mcp3208.read_channel(device_index, *channel);
+            if value >= 200 {
+                println!("Device: {}, Channel: {:?}, ADC Value: {}", device_index, channel, value);
+                i = 1;
+            }
+            //println!("Device: {}, Channel: {:?}, ADC Value: {}", device_index, channel, value);        
+        }
+    }
+    if i == 1 {
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+    }
+    else {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
 }
 pub struct adcPlugin;
 
