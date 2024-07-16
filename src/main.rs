@@ -3,6 +3,7 @@ use bevy::time::Fixed;
 use rs_ws281x::{ChannelBuilder, Controller, ControllerBuilder, StripType};
 use mcp3208::{Channel, Mcp3208};
 use std::sync::{Arc, Mutex};
+use rand::Rng;
 
 #[derive(Resource)]
 struct Mcp3208Resource {
@@ -40,7 +41,7 @@ struct Sensor{
     device: u8,
 }
 
-fn read_adc(mcp3208: ResMut<Mcp3208Resource>) {
+fn read_all_test(mcp3208: ResMut<Mcp3208Resource>) {
     //clear previous 40 lines
     println!("\x1B[2J\x1B[1;1H");
     let mut i = 0;
@@ -62,12 +63,20 @@ fn read_adc(mcp3208: ResMut<Mcp3208Resource>) {
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
 }
+
+fn warmup(mut mcp3208: ResMut<Mcp3208Resource>){
+    //TODO: activate random light and sensor combo
+    // get random number between 0 and 33 inclusive
+    let mut rng = rand::thread_rng();
+    let random_number = rng.gen_range(0..=33);
+
+}
 pub struct AdcPlugin;
 
 impl Plugin for AdcPlugin{
     fn build(&self, app: &mut App){
         app.insert_resource(Mcp3208Resource::new())
-            .add_systems(Update, read_adc);
+            .add_systems(Update, read_all_test);
     }
 }
 #[derive(Resource)]
