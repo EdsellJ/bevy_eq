@@ -4,7 +4,7 @@ use rs_ws281x::{ChannelBuilder, Controller, ControllerBuilder, StripType};
 use mcp3208::{Channel, Mcp3208};
 use std::sync::{Arc, Mutex};
 use rand::Rng;
-
+use bevy::utils::{Instant, Duration};
 
 #[derive(Resource, Default)]
 enum GameMode {
@@ -49,7 +49,7 @@ impl Mcp3208Resource {
 #[derive(Component)]
 struct Sensor{
     channel: Channel,
-    device: String,
+    device: usize,
     value: u16,
 }
 
@@ -75,6 +75,23 @@ fn read_all_test(mcp3208: ResMut<Mcp3208Resource>) {
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
 }
+fn spawn_all_sensors(mut commands: Commands, mcp3208: Res<Mcp3208Resource>){
+    let mut i = 0;
+    for device_index in 0..mcp3208.devices.len() {
+        for channel in &mcp3208.channels {
+            i += 1;
+            commands.spawn(Sensor{
+                channel: *channel,
+                device: device_index,
+                value: 0,
+            });
+            //return if more than 34 sensors
+            if i >= 34 {
+                return;
+            }
+        }
+    }
+}
 
 fn spawn_sensor(mut commands: Commands, mcp3208: Res<Mcp3208Resource>){
     let id = 0;
@@ -82,35 +99,35 @@ fn spawn_sensor(mut commands: Commands, mcp3208: Res<Mcp3208Resource>){
         0..=8 => {
             commands.spawn(Sensor{
                 channel: mcp3208.channels[id as usize],
-                device: mcp3208.devices[0].0.clone(),
+                device: 0,
                 value: 0,
             });
         }
         9..=16 => {
             commands.spawn(Sensor{
                 channel: mcp3208.channels[(id-8) as usize],
-                device: mcp3208.devices[1].0.clone(),
+                device: 1,
                 value: 0,
             });
         }
         17..=24 => {
             commands.spawn(Sensor{
                 channel: mcp3208.channels[(id-16) as usize],
-                device: mcp3208.devices[2].0.clone(),
+                device: 2,
                 value: 0,
             });
         }
         25..=32 => {
             commands.spawn(Sensor{
                 channel: mcp3208.channels[(id-24) as usize],
-                device: mcp3208.devices[3].0.clone(),
+                device: 3,
                 value: 0,
             });
         }
         33 => {
             commands.spawn(Sensor{
                 channel: mcp3208.channels[7],
-                device: mcp3208.devices[4].0.clone(),
+                device: 4,
                 value: 0,
             });
         }
@@ -120,15 +137,19 @@ fn spawn_sensor(mut commands: Commands, mcp3208: Res<Mcp3208Resource>){
 
 fn read_sensor(mut sensor: Query<(&mut Sensor, Entity)>, mcp3208: Res<Mcp3208Resource>){
     for (mut sensor, entity) in sensor.iter_mut(){
-        let value = mcp3208.read_channel(0, sensor.channel);
+        let value = mcp3208.read_channel(sensor.device, sensor.channel);
         sensor.value = value;
     }
 }
 #[derive(Resource)]
 struct PrintTimer(Timer);
 
-fn display_sensor(time: Res<Time>, mut timer: ResMut<PrintTimer>, sensor: Query<(&Sensor, Entity)>){
-    if timer.0.tick(time.delta()).just_finished(){
+fn display_sensor(sensor: Query<(&Sensor, Entity)>){
+    // create variable that get the current time
+    let time = Instant::now();
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    if time.elapsed() >= Duration::from_secs(0){
+        println!("\x1B[2J\x1B[1;1H");
         for (sensor, _) in sensor.iter(){
             println!("Device: {}, Channel: {:?}, ADC Value: {}", sensor.device, sensor.channel, sensor.value);
         }
@@ -157,7 +178,7 @@ impl Plugin for AdcPlugin{
         app.insert_resource(Mcp3208Resource::new())
             .insert_resource(GameMode::SingleSense)
             .insert_resource(PrintTimer(Timer::from_seconds(0.5, TimerMode::Repeating)))
-            .add_systems(Startup, spawn_sensor)
+            .add_systems(Startup, spawn_all_sensors)
             .add_systems(Update, read_sensor)
             .add_systems(Update, display_sensor);
             //.add_systems(Update, read_all_test);
