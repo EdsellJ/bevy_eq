@@ -6,6 +6,10 @@ use std::sync::{Arc, Mutex};
 use rand::Rng;
 use bevy::utils::{Instant, Duration};
 
+const LEDS_PER_RING: i32 = 1;
+const NUM_RINGS: i32 = 34;
+const LED_PIN: i32 = 12;
+
 #[derive(Resource, Default)]
 enum GameMode {
     Warmup,
@@ -51,6 +55,7 @@ struct Sensor{
     channel: Channel,
     device: usize,
     value: u16,
+    id: u8,
 }
 
 fn read_all_test(mcp3208: ResMut<Mcp3208Resource>) {
@@ -79,12 +84,13 @@ fn spawn_all_sensors(mut commands: Commands, mcp3208: Res<Mcp3208Resource>){
     let mut i = 0;
     for device_index in 0..mcp3208.devices.len() {
         for channel in &mcp3208.channels {
-            i += 1;
             commands.spawn(Sensor{
                 channel: *channel,
                 device: device_index,
                 value: 0,
+                id: i,
             });
+            i += 1;
             //return if more than 34 sensors
             if i >= 34 {
                 return;
@@ -92,46 +98,57 @@ fn spawn_all_sensors(mut commands: Commands, mcp3208: Res<Mcp3208Resource>){
         }
     }
 }
+#[derive(Component)]
+struct ID{
+    pub id: u8,
+}
 
-fn spawn_sensor(mut commands: Commands, mcp3208: Res<Mcp3208Resource>){
-    let id = 0;
-    match id {
-        0..=8 => {
-            commands.spawn(Sensor{
-                channel: mcp3208.channels[id as usize],
-                device: 0,
-                value: 0,
-            });
+//get id component and match to spawn that sensor
+fn spawn_sensor(query_id: Query<&ID>, mut commands: Commands, mcp3208: Res<Mcp3208Resource>){
+    for id in query_id.iter(){
+        match id.id {
+            0..8 => {
+                commands.spawn(Sensor{
+                    channel: mcp3208.channels[id.id as usize],
+                    device: 0,
+                    value: 0,
+                    id: id.id,
+                });
+            }
+            8..16 => {
+                commands.spawn(Sensor{
+                    channel: mcp3208.channels[(id.id-8) as usize],
+                    device: 1,
+                    value: 0,
+                    id: id.id,
+                });
+            }
+            16..24 => {
+                commands.spawn(Sensor{
+                    channel: mcp3208.channels[(id.id-16) as usize],
+                    device: 2,
+                    value: 0,
+                    id: id.id,
+                });
+            }
+            24..32 => {
+                commands.spawn(Sensor{
+                    channel: mcp3208.channels[(id.id-24) as usize],
+                    device: 3,
+                    value: 0,
+                    id: id.id,
+                });
+            }
+            32 | 33 => {
+                commands.spawn(Sensor{
+                    channel: mcp3208.channels[(id.id-32) as usize],
+                    device: 4,
+                    value: 0,
+                    id: id.id,
+                });
+            }
+            _ => {}
         }
-        9..=16 => {
-            commands.spawn(Sensor{
-                channel: mcp3208.channels[(id-8) as usize],
-                device: 1,
-                value: 0,
-            });
-        }
-        17..=24 => {
-            commands.spawn(Sensor{
-                channel: mcp3208.channels[(id-16) as usize],
-                device: 2,
-                value: 0,
-            });
-        }
-        25..=32 => {
-            commands.spawn(Sensor{
-                channel: mcp3208.channels[(id-24) as usize],
-                device: 3,
-                value: 0,
-            });
-        }
-        33 => {
-            commands.spawn(Sensor{
-                channel: mcp3208.channels[7],
-                device: 4,
-                value: 0,
-            });
-        }
-        _ => {}
     }
 }
 
@@ -151,33 +168,51 @@ fn display_sensor(sensor: Query<(&Sensor, Entity)>){
     if time.elapsed() >= Duration::from_secs(0){
         println!("\x1B[2J\x1B[1;1H");
         for (sensor, _) in sensor.iter(){
-            println!("Device: {}, Channel: {:?}, ADC Value: {}", sensor.device, sensor.channel, sensor.value);
+            let id = sensor.id.clone() + 1;
+            println!("Sensor ID: {}, ADC Value: {}", id, sensor.value);
         }
     }
 }
 
-fn warmup(mut mcp3208: ResMut<Mcp3208Resource>){
-    //TODO: activate random light and sensor combo
-    // get random number between 0 and 33 inclusive
-    //let mut rng = rand::thread_rng();
-    //let random_number = rng.gen_range(0..=33);
-    let random_number = 0;
-    // poll sensor
-    //spawn_sensor(random_number, commands, mcp3208);
-    //read_sensor(sensor, mcp3208);
-    //print sensor value
-    //for (sensor, _) in sensor.iter_mut(){
-        //println!("Device: {}, Channel: {:?}, ADC Value: {}", sensor.device, sensor.channel, sensor.value);
-    //}
-
+fn read_specific_sensor(mut query_sensor: Query<(&mut Sensor, Entity)>, mcp3208: Res<Mcp3208Resource>){
+    for (mut sensor, _) in query_sensor.iter_mut(){
+        let value = mcp3208.read_channel(sensor.device, sensor.channel);
+        sensor.value = value;
+    }
 }
+
+
+pub struct Warmup;
+
+impl Plugin for Warmup {
+    fn build(&self, app: &mut App) {
+        app
+            .insert_resource(Mcp3208Resource::new())
+            .add_systems(Startup, ((getRandomID, printID), spawn_sensor).chain())
+            .add_systems(Update, read_specific_sensor)
+            .add_systems(Update, display_sensor);
+    }
+}
+
+fn printID(query_id: Query<&ID>){
+    for id in query_id.iter(){
+        println!("ID: {}", id.id);
+    }
+}
+
+fn getRandomID(mut commands: Commands) {
+    let mut rng = rand::thread_rng();
+    let val = rng.gen_range(0..34);
+    commands.spawn(ID { id: val });
+}
+
 pub struct AdcPlugin;
 
 impl Plugin for AdcPlugin{
     fn build(&self, app: &mut App){
         app.insert_resource(Mcp3208Resource::new())
             .insert_resource(GameMode::SingleSense)
-            .insert_resource(PrintTimer(Timer::from_seconds(0.5, TimerMode::Repeating)))
+            //.insert_resource(PrintTimer(Timer::from_seconds(0.5, TimerMode::Repeating)))
             .add_systems(Startup, spawn_all_sensors)
             .add_systems(Update, read_sensor)
             .add_systems(Update, display_sensor);
@@ -185,90 +220,47 @@ impl Plugin for AdcPlugin{
     }
 
 }
-#[derive(Resource)]
-struct ColorTimer(Timer);
 
-pub struct ColorSwitcher;
 
-impl Plugin for ColorSwitcher {
-    fn build(&self, app: &mut App) {
-        app
-            .insert_resource(ColorTimer(Timer::from_seconds(10.0, TimerMode::Repeating)))
-            .add_systems(Startup, setup_lights)
-            .add_systems(Update, (turn_lights_blue, turn_lights_red).chain())
-            .add_systems(Update, print_timer);
-    }
-}
 
-// Define a resource to hold the LED controller
-struct LedControllerResource {
-    controller: Controller,
-}
-
-impl LedControllerResource {
-    fn new() -> Self {
-        let controller = ControllerBuilder::new()
-            .freq(800_000)
-            .dma(10)
-            .channel(
-                0, // Channel Index
-                ChannelBuilder::new()
-                    .pin(18) // GPIO 18
-                    .count(8) // Number of LEDs
-                    .strip_type(StripType::Ws2812)
-                    .brightness(20) // default: 255
-                    .build(),
-            )
-            .build()
-            .unwrap();
-        LedControllerResource { controller }
-        }
-    fn set_color(&mut self, color: [u8; 4]) {
-        let leds = self.controller.leds_mut(0);
-        for led in leds {
-            *led = color;
-        }
-        self.controller.render().unwrap();
-    }
-
-    fn clear_leds(&mut self) {
-        self.set_color([0, 0, 0, 0]);
-    }
-}
-
-fn setup_lights(world: &mut World) {
-    // Initialize the LED controller and add it as a resource
-    let mut led_controller = LedControllerResource::new();
-    led_controller.clear_leds();
-    world.insert_non_send_resource(led_controller);
-}
-
-fn turn_lights_blue(time: Res<Time>, mut timer: ResMut<ColorTimer>, mut led_controller: NonSendMut<LedControllerResource>) {
-    if timer.0.tick(time.delta()).elapsed() < timer.0.tick(time.delta()).duration() / 2{
-        led_controller.set_color([255, 0, 0, 0]);
-    }
-}
-
-fn turn_lights_red(time: Res<Time>, mut timer: ResMut<ColorTimer>, mut led_controller: NonSendMut<LedControllerResource>) {
-    if timer.0.tick(time.delta()).elapsed() >= timer.0.tick(time.delta()).duration() / 2{
-        led_controller.set_color([0, 0, 255, 0]);
-    }
-}
-
-fn clear_leds(mut led_controller: NonSendMut<LedControllerResource>) {
-    led_controller.clear_leds();
-}
 fn print_timer(time: Res<Time>, mut timer: ResMut<ColorTimer>) {
     let elapsed = timer.0.tick(time.delta()).elapsed_secs();
-    //erase last console printed line then print elapsed time
-    print!("\x1B[1A\x1B[K");
-    println!("Elapsed time: {}", elapsed);
+    println!("Elapsed time: {}", elapsed/5.0);
 }
+
+
+//spawn all leds
+// standby will be the default state
+// it will turn a light green if a sensor has a value over 100
+fn standby(sensor: Query<(&Sensor, Entity)>, mcp3208: Res<Mcp3208Resource>, mut led_controller: NonSendMut<LedControllerResource>) {
+    // check if any sensor has a value over 100
+    for (sensor, _) in sensor.iter(){
+        let value = sensor.value;
+        match value {
+            100..=300 => {
+                led_controller.set_ring_color(sensor.id as i32, Colors::default().green);
+            }
+            301..=500 => {
+                led_controller.set_ring_color(sensor.id as i32, Colors::default().yellow);
+            }
+            501..=700 => {
+                led_controller.set_ring_color(sensor.id as i32, Colors::default().red);
+            }
+            701..=2000 => {
+                led_controller.set_ring_color(sensor.id as i32, Colors::default().purple);
+            }
+            _ => {
+                led_controller.set_ring_color(sensor.id as i32, Colors::default().clear);
+            }
+        }
+    }
+}
+
 fn main() {
     App::new()
-        .add_plugins((MinimalPlugins, AdcPlugin))
-        //.add_systems(Startup, setup_lights)
-        //.add_systems(Update, clear_leds)
+        .add_plugins((MinimalPlugins, AdcPlugin, ColorSwitcher))
+        //.add_plugins((MinimalPlugins, ColorSwitcher, Warmup))
+        .add_systems(Update, standby)
         .run();
 }
 
