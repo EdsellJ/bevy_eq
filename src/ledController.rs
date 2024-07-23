@@ -1,4 +1,11 @@
+use bevy::prelude::*;
+use bevy::time::Fixed;
+use rs_ws281x::{ChannelBuilder, Controller, ControllerBuilder, StripType};
+use bevy::utils::{Instant, Duration};
 
+const LEDS_PER_RING: i32 = 1;
+const NUM_RINGS: i32 = 34;
+const LED_PIN: i32 = 12;
 
 #[derive(Resource)]
 struct ColorTimer(Timer);
@@ -8,15 +15,12 @@ pub struct ColorSwitcher;
 impl Plugin for ColorSwitcher {
     fn build(&self, app: &mut App) {
         app
-            //.insert_resource(ColorTimer(Timer::from_seconds(10.0, TimerMode::Repeating)))
             .add_systems(Startup, setup_lights);
-            //.add_systems(Update, (turn_lights_blue, turn_lights_red).chain());
-            //.add_systems(Update, print_timer);
     }
 }
 
 // Define a resource to hold the LED controller
-struct LedControllerResource {
+pub struct LedControllerResource {
     controller: Controller,
 }
 
@@ -38,7 +42,7 @@ impl LedControllerResource {
             .unwrap();
         LedControllerResource { controller }
         }
-    fn set_all_color(&mut self, color: [u8; 4]) {
+    pub fn set_all_color(&mut self, color: [u8; 4]) {
         let leds = self.controller.leds_mut(0);
         for led in leds {
             *led = color;
@@ -46,7 +50,7 @@ impl LedControllerResource {
         self.controller.render().unwrap();
     }
 
-    fn set_ring_color(&mut self, ring: i32, color: [u8; 4]) {
+    pub fn set_ring_color(&mut self, ring: i32, color: [u8; 4]) {
         let leds = self.controller.leds_mut(0);
         for i in 0..LEDS_PER_RING {
             leds[(ring * LEDS_PER_RING + i) as usize] = color;
@@ -54,22 +58,22 @@ impl LedControllerResource {
         self.controller.render().unwrap();
     }
 
-    fn clear_leds(&mut self) {
+    pub fn clear_leds(&mut self) {
         self.set_all_color(Colors::default().clear);
     }
 }
 
 #[derive(Component)]
 // Define colors in struct form
-struct Colors {
+pub struct Colors {
     //individual colors
-    red: [u8; 4],
-    green: [u8; 4],
-    blue: [u8; 4],
-    yellow: [u8; 4],
-    purple: [u8; 4],
-    white: [u8; 4],
-    clear: [u8; 4],
+    pub red: [u8; 4],
+    pub green: [u8; 4],
+    pub blue: [u8; 4],
+    pub yellow: [u8; 4],
+    pub purple: [u8; 4],
+    pub white: [u8; 4],
+    pub clear: [u8; 4],
 }
 
 impl Default for Colors {
@@ -112,6 +116,11 @@ fn turn_lights_red(time: Res<Time>, mut timer: ResMut<ColorTimer>, mut led_contr
     }
 }
 
-fn clear_leds(mut led_controller: NonSendMut<LedControllerResource>) {
+pub fn clear_leds(mut led_controller: NonSendMut<LedControllerResource>) {
     led_controller.clear_leds();
+}
+
+fn print_timer(time: Res<Time>, mut timer: ResMut<ColorTimer>) {
+    let elapsed = timer.0.tick(time.delta()).elapsed_secs();
+    println!("Elapsed time: {}", elapsed/5.0);
 }

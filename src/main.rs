@@ -1,14 +1,11 @@
-use bevy::prelude::*;
-use bevy::time::Fixed;
-use rs_ws281x::{ChannelBuilder, Controller, ControllerBuilder, StripType};
 use mcp3208::{Channel, Mcp3208};
 use std::sync::{Arc, Mutex};
 use rand::Rng;
+use bevy::prelude::*;
+use bevy::time::Fixed;
 use bevy::utils::{Instant, Duration};
-
-const LEDS_PER_RING: i32 = 1;
-const NUM_RINGS: i32 = 34;
-const LED_PIN: i32 = 12;
+use crate::ledController::{LedControllerResource, Colors, ColorSwitcher};
+pub mod ledController;
 
 #[derive(Resource, Default)]
 enum GameMode {
@@ -221,10 +218,7 @@ impl Plugin for AdcPlugin{
 
 }
 
-fn print_timer(time: Res<Time>, mut timer: ResMut<ColorTimer>) {
-    let elapsed = timer.0.tick(time.delta()).elapsed_secs();
-    println!("Elapsed time: {}", elapsed/5.0);
-}
+
 
 
 //spawn all leds
