@@ -1,7 +1,5 @@
 use bevy::prelude::*;
-use bevy::time::Fixed;
 use rs_ws281x::{ChannelBuilder, Controller, ControllerBuilder, StripType};
-use bevy::utils::{Instant, Duration};
 
 const LEDS_PER_RING: i32 = 1;
 const NUM_RINGS: i32 = 34;
