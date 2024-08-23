@@ -53,8 +53,6 @@ impl LedControllerResource {
         let leds = self.controller.leds_mut(0);
         for i in 0..LEDS_PER_RING {
             leds[(ring * LEDS_PER_RING + i) as usize] = color;
-            //sleep 50ms
-            std::thread::sleep(Duration::from_millis(1));
         }
         self.controller.render().unwrap();
     }

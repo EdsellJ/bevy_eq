@@ -89,8 +89,19 @@ pub struct ID{
 }
 
 //get id component and match to spawn that sensor
-pub fn spawn_sensor(query_id: Query<&ID>, mut commands: Commands, mcp3208: Res<Mcp3208Resource>){
+pub fn spawn_sensor(query_id: Query<&ID>, mut commands: Commands, mcp3208: Res<Mcp3208Resource>, sensor: Query<&Sensor>){
     for id in query_id.iter(){
+        //check if sensor already exists
+        let mut exists = false;
+        for sensor in sensor.iter(){
+            if sensor.id == id.id {
+                exists = true;
+                break;  // Exit early if the ID is found
+            }
+        }
+        if exists {
+            continue;
+        }
         match id.id {
             0..8 => {
                 commands.spawn(Sensor{
@@ -137,6 +148,14 @@ pub fn spawn_sensor(query_id: Query<&ID>, mut commands: Commands, mcp3208: Res<M
     }
 }
 
+pub fn despawn_sensors(query_id: Query<(&ID, Entity)>, mut commands: Commands, sensor: Query<(&Sensor, Entity)>){
+    for (sensor, ent) in sensor.iter(){
+        commands.entity(ent).despawn();
+    }
+    for (id, ent) in query_id.iter(){
+        commands.entity(ent).despawn();
+    }
+}
 pub fn read_sensor(mut sensor: Query<(&mut Sensor, Entity)>, mcp3208: Res<Mcp3208Resource>){
     for (mut sensor, _entity) in sensor.iter_mut(){
         let value = mcp3208.read_channel(sensor.device, sensor.channel);

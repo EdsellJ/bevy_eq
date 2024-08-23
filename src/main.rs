@@ -4,6 +4,8 @@ use crate::led_controller::*;
 use crate::sensor_controller::*;
 use rust_gpiozero::Button;
 use std::time::Duration;
+//use threading
+use std::thread;
 
 pub mod led_controller;
 pub mod sensor_controller;
@@ -12,8 +14,9 @@ pub mod sensor_controller;
 #[derive(States, Debug, Clone, PartialEq, Eq, Hash)]
 enum GameMode {
     Warmup,
-    FullBody,
     Eyes,
+    FullBodyStartup,
+    FullBodyRun,
     Combo1,
     Combo2,
     Combo3,
@@ -24,32 +27,88 @@ pub struct Menu;
 impl Plugin for Menu {
     fn build(&self, app: &mut App) {
         app
-            
+            //mode switching systems
+            .add_systems(Update,((mode_switcher_id_select, spawn_sensor, light_to_hit_green, mode_switcher).chain()).run_if(in_state(GameMode::Menu)));
     }
 }
 
-//system that check if a button is pressed
-fn button_pressed(){
-    // Create a button which is attached to Pin 17
-    let mut button = Button::new(4);
-    // Add debouncing so that subsequent presses within 100ms don't trigger a press
-    //.debounce(Duration::from_millis(100));
 
-button.wait_for_press(None);
-println!("button pressed");
+fn mode_switcher_id_select(mut commands: Commands, mut query_id: Query<&mut ID>) {
+    //spawn sensors 2, 3, 4, 5, 6, 7
+    //if ids 2-8 do not exist then spawn
+    for i in 1..7 {
+        let mut exists = false;
+        for id in query_id.iter() {
+            if id.id == i {
+                exists = true;
+                break;  // Exit early if the ID is found
+            }
+        }
+        if !exists {
+            commands.spawn(ID { id: i });
+        }
+    }
 }
+
+fn mode_switcher(state: Res<State<GameMode>>, mut next_state: ResMut<NextState<GameMode>>, sensor: Query<(&Sensor, Entity)>) {
+    //switch to the next state
+    for (sensor, _) in sensor.iter(){
+        let value = sensor.value;
+        match value {
+            100..=2000 => {
+                match sensor.id{
+                    1 => {
+                        next_state.set(GameMode::Warmup);
+                    }
+                    2 => {
+                        next_state.set(GameMode::Eyes);
+                    }
+                    3 => {
+                        next_state.set(GameMode::FullBodyStartup);
+                    }
+                    4 => {
+                        next_state.set(GameMode::Combo1);
+                    }
+                    5 => {
+                        next_state.set(GameMode::Combo2);
+                    }
+                    6 => {
+                        next_state.set(GameMode::Combo3);
+                    }
+                    _ => {
+                        continue;
+                    }
+                }
+            }
+            _ => {
+                continue;
+            }
+        }
+    }
+}
+
+fn button_pressed(mut next_state: ResMut<NextState<GameMode>>) {
+     // Create a button which is attached to Pin 17
+     let button = Button::new(4);
+     // Add debouncing so that subsequent presses within 100ms don't trigger a press
+     //.debounce(Duration::from_millis(100));
+     // timeout for 1ms
+    if button.value() == true{
+        next_state.set(GameMode::Menu)
+    }
+     //change state to Menu
+}
+
 pub struct Warmup;
 
 impl Plugin for Warmup {
     fn build(&self, app: &mut App) {
         app
-            .add_plugins((MinimalPlugins, ColorSwitcher))
-            .insert_resource(Mcp3208Resource::new())
-            //.add_systems(Startup, ((spawn_random_id, print_id), spawn_sensor.chain()))
-            .add_systems(Update, read_specific_sensor).run_if()
-            .add_systems(Update, display_sensor)
-            .add_systems(Update, full_body_update)            
-            .add_systems(Update, ((update_random_id, print_id), (spawn_sensor, light_to_hit_green).chain()).run_if(check_if_none_exist));
+            .add_systems(Update, full_body_update.run_if(in_state(GameMode::Warmup)))
+            .add_systems(Update, ((despawn_sensors, spawn_random_id, print_id, spawn_sensor, light_to_hit_green).chain())
+                .run_if(check_if_none_exist)
+                .run_if(in_state(GameMode::Warmup)));
+
     }   
 }
 
@@ -86,7 +145,6 @@ fn update_random_id(mut query_id: Query<&mut ID>){
         let mut rng = rand::thread_rng();
         let val = rng.gen_range(0..26);
         the_id.id = val;
-    
 }
 
 pub struct AdcPlugin;
@@ -94,7 +152,6 @@ pub struct AdcPlugin;
 impl Plugin for AdcPlugin{
     fn build(&self, app: &mut App){
         app.insert_resource(Mcp3208Resource::new())
-            .insert_resource(GameMode::SingleSense)
             .add_systems(Startup, spawn_all_sensors)
             .add_systems(Update, read_sensor)
             .add_systems(Update, display_sensor);
@@ -107,12 +164,8 @@ pub struct Eyes;
 impl Plugin for Eyes {
     fn build(&self, app: &mut App) {
         app
-            .add_plugins((MinimalPlugins, ColorSwitcher))
-            .insert_resource(Mcp3208Resource::new())
-            .add_systems(Startup, (spawn_eyes_id, spawn_sensor).chain())
-            .add_systems(Update, read_specific_sensor)
-            .add_systems(Update, display_sensor)
-            .add_systems(Update, glowing_eyes);
+            .add_systems(Update, (spawn_eyes_id, spawn_sensor).chain().run_if(in_state(GameMode::Eyes)))
+            .add_systems(Update, glowing_eyes.run_if(in_state(GameMode::Eyes)));
     }
 }
 fn spawn_eyes_id(mut commands: Commands) {
@@ -135,7 +188,7 @@ fn glowing_eyes(mut led_controller: NonSendMut<LedControllerResource>, sensor: Q
     let mut g = 255;
     let mut b = 0;
     let mut up = true;
-    loop{
+    for i in 0..250{
         for (sensor, _) in sensor.iter(){
             //set orange to start
             led_controller.set_ring_color(sensor.id as i32, [b, r, g, 0]);
@@ -201,32 +254,9 @@ impl Combinations {
 pub struct Combo1;
 impl Plugin for Combo1{
     fn build(&self, app: &mut App){
-        app
-            .add_plugins((MinimalPlugins, ColorSwitcher))
-            .insert_resource(Mcp3208Resource::new())
-            .insert_resource(Combinations::new())
-            .add_systems(Startup, (combo_1_startup, spawn_sensor).chain())
-            .add_systems(Update, read_specific_sensor)
-            .add_systems(Update, display_sensor)
-            .add_systems(Update, full_body_update)           
-            .add_systems(Update, light_to_hit_green) 
-            .add_systems(Update, (combo_1_update, spawn_sensor, read_sensor, display_sensor).chain().run_if(check_if_none_exist));
-    }
-}
-fn combo_1_update(mut commands: Commands, mut combo: ResMut<Combinations>, mut query_id: Query<&mut ID>){
-    //get index from combo struct
-    let index = combo.current_index;
-    let ids = combo.combo1;
-            
-    let mut the_id = query_id.single_mut();
-    the_id.id = ids[index as usize];
-
-    //increment the index if it is not the last index
-    if index < 4{
-        combo.current_index += 1;
-    }
-    else{
-        combo.current_index = 0;
+        app      
+            .add_systems(Update, full_body_update.run_if(in_state(GameMode::Combo1)))
+            .add_systems(Update, (despawn_sensors, combo_1_startup, spawn_sensor, light_to_hit_green).chain().run_if(check_if_none_exist).run_if(in_state(GameMode::Combo1)));
     }
 }
 fn combo_1_startup(mut commands: Commands, mut combo: ResMut<Combinations>, query_id: Query<&ID>){
@@ -237,41 +267,24 @@ fn combo_1_startup(mut commands: Commands, mut combo: ResMut<Combinations>, quer
     let ids = combo.combo1;
             
     commands.spawn(ID { id: ids[index as usize]});
-    //increment the index
-    combo.current_index += 1;
-}
-
-pub struct Combo2;
-impl Plugin for Combo2{
-    fn build(&self, app: &mut App){
-        app
-            .add_plugins((MinimalPlugins, ColorSwitcher))
-            .insert_resource(Mcp3208Resource::new())
-            .insert_resource(Combinations::new())
-            .add_systems(Startup, (combo_2_startup, spawn_sensor).chain())
-            .add_systems(Update, read_specific_sensor)
-            .add_systems(Update, display_sensor)
-            .add_systems(Update, full_body_update)           
-            .add_systems(Update, light_to_hit_green) 
-            .add_systems(Update, (combo_2_update, spawn_sensor, read_sensor, display_sensor).chain().run_if(check_if_none_exist));
-    }
-}
-fn combo_2_update(mut commands: Commands, mut combo: ResMut<Combinations>, mut query_id: Query<&mut ID>){
-    //get index from combo struct
-    let index = combo.current_index;
-    let ids = combo.combo2;
-            
-    let mut the_id = query_id.single_mut();
-    the_id.id = ids[index as usize];
-
     //increment the index if it is not the last index
-    if index < 2{
+    if index < 4{
         combo.current_index += 1;
     }
     else{
         combo.current_index = 0;
     }
 }
+
+pub struct Combo2;
+impl Plugin for Combo2{
+    fn build(&self, app: &mut App){
+        app   
+            .add_systems(Update, full_body_update.run_if(in_state(GameMode::Combo2)))
+            .add_systems(Update, (despawn_sensors, combo_2_startup, spawn_sensor, light_to_hit_green).chain().run_if(check_if_none_exist).run_if(in_state(GameMode::Combo2)));
+    }
+}
+
 fn combo_2_startup(mut commands: Commands, mut combo: ResMut<Combinations>, query_id: Query<&ID>){
     //combo 1 is 24, 13, 4, 2, 7
     
@@ -281,41 +294,23 @@ fn combo_2_startup(mut commands: Commands, mut combo: ResMut<Combinations>, quer
             
     commands.spawn(ID { id: ids[index as usize]});
     //increment the index
-    combo.current_index += 1;
-}
-
-pub struct Combo3;
-impl Plugin for Combo3{
-    fn build(&self, app: &mut App){
-        app
-            .add_plugins((MinimalPlugins, ColorSwitcher))
-            .insert_resource(Mcp3208Resource::new())
-            .insert_resource(Combinations::new())
-            .add_systems(Startup, (combo_3_startup, spawn_sensor, combo_3_update, spawn_sensor).chain())
-            .add_systems(Update, read_specific_sensor)
-            .add_systems(Update, display_sensor)
-            .add_systems(Update, full_body_update)           
-            .add_systems(Update, light_to_hit_green) 
-            //.add_systems(Update, (combo_3_update, spawn_sensor, combo_3_update, spawn_sensor, read_sensor, display_sensor).chain().run_if(check_if_none_exist).run_if(check_if_at_index_0))
-            .add_systems(Update, (combo_3_update, spawn_sensor, read_sensor, display_sensor).chain().run_if(check_if_none_exist));
-    }
-}
-fn combo_3_update(mut commands: Commands, mut combo: ResMut<Combinations>, mut query_id: Query<&mut ID>){
-    //get index from combo struct
-    let index = combo.current_index;
-    let ids = combo.combo3;
-            
-    let mut the_id = query_id.single_mut();
-    the_id.id = ids[index as usize];
-
-    //increment the index if it is not the last index
-    if index < 3{
+    if index < 2{
         combo.current_index += 1;
     }
     else{
         combo.current_index = 0;
     }
 }
+
+pub struct Combo3;
+impl Plugin for Combo3{
+    fn build(&self, app: &mut App){
+        app   
+            .add_systems(Update, full_body_update.run_if(in_state(GameMode::Combo3)))
+            .add_systems(Update, (despawn_sensors, combo_3_startup, spawn_sensor, light_to_hit_green).chain().run_if(check_if_none_exist).run_if(in_state(GameMode::Combo3)));
+    }
+}
+
 fn combo_3_startup(mut commands: Commands, mut combo: ResMut<Combinations>, query_id: Query<&ID>){
     //combo 1 is 24, 13, 4, 2, 7
     
@@ -325,7 +320,12 @@ fn combo_3_startup(mut commands: Commands, mut combo: ResMut<Combinations>, quer
             
     commands.spawn(ID { id: ids[index as usize]});
     //increment the index
-    combo.current_index += 1;
+    if index < 3{
+        combo.current_index += 1;
+    }
+    else{
+        combo.current_index = 0;
+    }
 }
 
 fn check_if_at_index_0(q_combo: Res<Combinations>) -> bool{
@@ -347,11 +347,13 @@ pub struct FullBody;
 impl Plugin for FullBody {
     fn build(&self, app: &mut App) {
         app
-            .add_plugins((MinimalPlugins, AdcPlugin, ColorSwitcher))
-            //.add_systems(Startup, spawn_all_sensors)
-            .add_systems(Startup, set_all_green)
-            .add_systems(Update, full_body_update);
+            .add_systems(Update, (spawn_all_sensors, light_to_hit_green, full_body_transition).chain().run_if(in_state(GameMode::FullBodyStartup)))
+            .add_systems(Update, full_body_update.run_if(in_state(GameMode::FullBodyRun)));
     }
+}
+fn full_body_transition(mut next_state: ResMut<NextState<GameMode>>) {
+    //switch to the next state
+    next_state.set(GameMode::FullBodyRun);
 }
 fn set_all_green(sensor: Query<(&Sensor, Entity)>, mut led_controller: NonSendMut<LedControllerResource>) {
     led_controller.set_all_color(Colors::default().green);
@@ -409,14 +411,39 @@ fn standby(sensor: Query<(&Sensor, Entity)>, mut led_controller: NonSendMut<LedC
     }
 }
 
+pub struct StateTransitionHandler;
+
+impl Plugin for StateTransitionHandler {
+    fn build(&self, app: &mut App) {
+        app
+            .add_systems(OnEnter(GameMode::Menu),(
+                despawn_sensors,
+                clear_leds
+            ))
+            .add_systems(OnExit(GameMode::Menu),(
+                despawn_sensors,
+                clear_leds
+            ));
+    }
+}
 fn main() {
     App::new()
+        .insert_state(GameMode::Menu)
+        .add_plugins((MinimalPlugins, ColorSwitcher, StateTransitionHandler))
+        .insert_resource(Mcp3208Resource::new())
+        .insert_resource(Combinations::new())
+        .add_plugins(Menu)
         .add_systems(Update, button_pressed)
-        //.add_plugins(Combo3)
-        //.add_plugins(Eyes)
-        //.add_plugins(FullBody)
-        //.add_plugins(Warmup)
+        .add_systems(Update, (read_sensor, display_sensor))
+        .add_plugins(Combo1)
+        .add_plugins(Combo2)
+        .add_plugins(Combo3)
+        .add_plugins(Eyes)
+        .add_plugins(FullBody)
+        .add_plugins(Warmup)
         .run();
+
+
 }
         
         
