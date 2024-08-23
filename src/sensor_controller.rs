@@ -77,7 +77,7 @@ pub fn spawn_all_sensors(mut commands: Commands, mcp3208: Res<Mcp3208Resource>){
             });
             i += 1;
             //return if more than 34 sensors
-            if i >= 34 {
+            if i >= 27 {
                 return;
             }
         }
@@ -149,7 +149,7 @@ struct PrintTimer(Timer);
 pub fn display_sensor(sensor: Query<(&Sensor, Entity)>){
     // create variable that get the current time
     let time = Instant::now();
-    std::thread::sleep(std::time::Duration::from_millis(100));
+    std::thread::sleep(std::time::Duration::from_millis(10));
     if time.elapsed() >= Duration::from_secs(0){
         println!("\x1B[2J\x1B[1;1H");
         for (sensor, _) in sensor.iter(){

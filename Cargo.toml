@@ -12,6 +12,7 @@ bevy = { version = "0.13.2", features = ["dynamic_linking"] }
 mcp3208 = "0.1.0"
 rand = "0.8.5"
 rs_ws281x = "0.5.1"
+rust_gpiozero = "0.2.1"
 
 [unstable]
 codegen-backend = true

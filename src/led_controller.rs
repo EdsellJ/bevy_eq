@@ -1,8 +1,9 @@
 use bevy::prelude::*;
 use rs_ws281x::{ChannelBuilder, Controller, ControllerBuilder, StripType};
+use std::time::Duration;
 
-const LEDS_PER_RING: i32 = 1;
-const NUM_RINGS: i32 = 34;
+const LEDS_PER_RING: i32 = 8;
+const NUM_RINGS: i32 = 27;
 const LED_PIN: i32 = 12;
 
 #[derive(Resource)]
@@ -52,6 +53,8 @@ impl LedControllerResource {
         let leds = self.controller.leds_mut(0);
         for i in 0..LEDS_PER_RING {
             leds[(ring * LEDS_PER_RING + i) as usize] = color;
+            //sleep 50ms
+            std::thread::sleep(Duration::from_millis(1));
         }
         self.controller.render().unwrap();
     }
@@ -108,7 +111,7 @@ fn turn_lights_blue(time: Res<Time>, mut timer: ResMut<ColorTimer>, mut led_cont
     }
 }
 
-fn turn_lights_red(time: Res<Time>, mut timer: ResMut<ColorTimer>, mut led_controller: NonSendMut<LedControllerResource>) {
+pub fn turn_lights_red(time: Res<Time>, mut timer: ResMut<ColorTimer>, mut led_controller: NonSendMut<LedControllerResource>) {
     if timer.0.tick(time.delta()).elapsed() >= timer.0.tick(time.delta()).duration() / 2{
         led_controller.set_all_color(Colors::default().red);
     }
